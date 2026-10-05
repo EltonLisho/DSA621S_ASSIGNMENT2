@@ -1,1 +1,83 @@
 services:
+  api:
+    build: ./services/order-api
+    ports: ["${API_PORT:-8080}:8080"]
+    environment:
+      BAL_CONFIG_VAR_MONGOURI: mongodb://${MONGO_ROOT_USERNAME:-foodapp}:${MONGO_ROOT_PASSWORD:-foodapp-local}@mongodb:27017/?authSource=admin
+      BAL_CONFIG_VAR_KAFKAURL: redpanda:9092
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  web:
+    image: nginx:1.27-alpine
+    ports: ["${WEB_PORT:-5173}:80"]
+    volumes: ["./web:/usr/share/nginx/html:ro", "./infra/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    depends_on:
+      - api
+    restart: unless-stopped
+  mongodb:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-foodapp}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-foodapp-local}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-food_delivery}
+    ports: ["27017:27017"]
+    volumes: ["mongo_data:/data/db", "./infra/mongo-init.js:/docker-entrypoint-initdb.d/01-init.js:ro"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --default-log-level=info
+      - --kafka-addr
+      - "internal://0.0.0.0:9092,external://0.0.0.0:19092"
+      - --advertise-kafka-addr
+      - "internal://redpanda:9092,external://localhost:${KAFKA_EXTERNAL_PORT:-19092}"
+    ports: ["${KAFKA_EXTERNAL_PORT:-19092}:19092"]
+    volumes: ["redpanda_data:/var/lib/redpanda/data"]
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+  topic-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.18
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        rpk topic create --brokers redpanda:9092 orders.created --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 payments.completed --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 payments.failed --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 orders.confirmed --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 orders.preparing --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 orders.ready --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 orders.status.changed --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 restaurants.menu.updated --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 delivery.assigned --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 delivery.completed --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 orders.cancelled --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 notifications.created --partitions 3 --replicas 1 || true
+        rpk topic create --brokers redpanda:9092 customers.created --partitions 3 --replicas 1 || true
+    restart: "no"
+volumes:
+  mongo_data:
+  redpanda_data:
