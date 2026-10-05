@@ -260,3 +260,129 @@ service / on apiListener {
             response.setJsonPayload(check updated.cloneWithType(json));
             return response;
     }
+resource function post customers(@http:Payload json payload) returns http:Response|error {
+        string name = check payload.name.ensureType();
+        string email = check payload.email.ensureType();
+        string phone = check payload.phone.ensureType();
+        if name.trim().length() < 2 || email.indexOf("@") < 0 {
+            http:Response invalid = new;
+            invalid.statusCode = 400;
+            invalid.setJsonPayload({"error": "A name and valid email address are required."});
+            return invalid;
+        }
+        Customer customer = {id: "CU-" + time:utcNow().toString(), name: name, email: email, phone: phone,
+            createdAt: time:utcNow().toString()};
+        Customer? existingCustomer = check self.customersCollection->findOne({email: email}, {}, {"_id": 0}, Customer);
+        if existingCustomer is Customer {
+            http:Response existingResponse = new;
+            existingResponse.setJsonPayload(check existingCustomer.cloneWithType(json));
+            return existingResponse;
+        }
+        check self.customersCollection->insertOne(customer);
+        check self.eventProducer->send({topic: "customers.created", key: customer.id.toBytes(), value: customer});
+        http:Response response = new;
+        response.statusCode = 201;
+        response.setJsonPayload(check customer.cloneWithType(json));
+        return response;
+    }
+
+    resource function get customers() returns json[]|error {
+        stream<StoredDocument, error?> resultStream = check self.customersCollection->find({}, {}, {"_id": 0}, StoredDocument);
+        json[] result = [];
+        StoredDocument[] documents = check from var document in resultStream select document;
+        foreach StoredDocument document in documents { result.push(check document.cloneWithType(json)); }
+        check resultStream.close();
+        return result;
+    }
+
+    resource function post payments(@http:Payload json payload) returns http:Response|error {
+        string orderId = check payload.orderId.ensureType();
+        FoodOrder? orderRecord = check self.ordersCollection->findOne({id: orderId}, {}, {"_id": 0}, FoodOrder);
+        if orderRecord is () {
+            http:Response missing = new;
+            missing.statusCode = 404;
+            missing.setJsonPayload({"error": "Order not found."});
+            return missing;
+        }
+        Payment payment = {id: "PY-" + orderId, orderId: orderId, amount: orderRecord.total, currency: "NAD",
+            status: "COMPLETED", providerReference: "SIM-" + orderId, createdAt: time:utcNow().toString()};
+        check self.paymentsCollection->insertOne(payment);
+        check self.eventProducer->send({topic: "payments.completed", key: orderId.toBytes(), value: payment});
+        http:Response response = new;
+        response.statusCode = 201;
+        response.setJsonPayload(check payment.cloneWithType(json));
+        return response;
+    }
+
+    resource function get payments() returns json[]|error {
+        stream<StoredDocument, error?> resultStream = check self.paymentsCollection->find({}, {}, {"_id": 0}, StoredDocument);
+        json[] result = [];
+        StoredDocument[] documents = check from var document in resultStream select document;
+        foreach StoredDocument document in documents { result.push(check document.cloneWithType(json)); }
+        check resultStream.close();
+        return result;
+    }
+
+    resource function post deliveries(@http:Payload json payload) returns http:Response|error {
+        string orderId = check payload.orderId.ensureType();
+        FoodOrder? orderRecord = check self.ordersCollection->findOne({id: orderId}, {}, {"_id": 0}, FoodOrder);
+        if orderRecord is () {
+            http:Response missing = new;
+            missing.statusCode = 404;
+            missing.setJsonPayload({"error": "Order not found."});
+            return missing;
+        }
+        Delivery delivery = {id: "DL-" + orderId, orderId: orderId, driverName: "Driver One",
+            status: "ASSIGNED", createdAt: time:utcNow().toString()};
+        check self.deliveriesCollection->insertOne(delivery);
+        check self.eventProducer->send({topic: "delivery.assigned", key: orderId.toBytes(), value: delivery});
+        http:Response response = new;
+        response.statusCode = 201;
+        response.setJsonPayload(check delivery.cloneWithType(json));
+        return response;
+    }
+
+    resource function get deliveries() returns json[]|error {
+        stream<StoredDocument, error?> resultStream = check self.deliveriesCollection->find({}, {}, {"_id": 0}, StoredDocument);
+        json[] result = [];
+        StoredDocument[] documents = check from var document in resultStream select document;
+        foreach StoredDocument document in documents { result.push(check document.cloneWithType(json)); }
+        check resultStream.close();
+        return result;
+    }
+
+    resource function get notifications() returns json[]|error {
+        stream<StoredDocument, error?> resultStream = check self.notificationsCollection->find({}, {}, {"_id": 0}, StoredDocument);
+        json[] result = [];
+        StoredDocument[] documents = check from var document in resultStream select document;
+        foreach StoredDocument document in documents { result.push(check document.cloneWithType(json)); }
+        check resultStream.close();
+        return result;
+    }
+
+    resource function get admin/reports() returns json|error {
+        int orderCount = check self.ordersCollection->countDocuments({}, {});
+        int paymentCount = check self.paymentsCollection->countDocuments({}, {});
+        int deliveryCount = check self.deliveriesCollection->countDocuments({}, {});
+        return {orders: orderCount, payments: paymentCount, deliveries: deliveryCount};
+    }
+}
+
+listener kafka:Listener paymentEvents = new (kafkaUrl, {
+    groupId: "food-delivery-payment-service",
+    topics: ["orders.created"],
+    offsetReset: "earliest"
+});
+
+service kafka:Service on paymentEvents {
+    private final mongodb:Collection ordersCollection;
+    private final mongodb:Collection paymentsCollection;
+    private final kafka:Producer producer;
+
+    function init() returns error? {
+        mongodb:Client mongoClient = check new ({connection: mongoUri});
+        mongodb:Database database = check mongoClient->getDatabase("food_delivery");
+        self.ordersCollection = check database->getCollection("orders");
+        self.paymentsCollection = check database->getCollection("payments");
+        self.producer = check new (kafkaUrl, {acks: kafka:ACKS_ALL, retryCount: 3, enableIdempotence: true});
+    }
