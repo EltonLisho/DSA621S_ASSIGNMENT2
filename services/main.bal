@@ -386,3 +386,87 @@ service kafka:Service on paymentEvents {
         self.paymentsCollection = check database->getCollection("payments");
         self.producer = check new (kafkaUrl, {acks: kafka:ACKS_ALL, retryCount: 3, enableIdempotence: true});
     }
+    remote function onConsumerRecord(kafka:Caller caller, json[] records) returns error? {
+        foreach json orderEvent in records {
+            string orderId = check orderEvent.id.ensureType();
+            int existingCount = check self.paymentsCollection->countDocuments({orderId: orderId}, {});
+            if existingCount == 0 {
+                decimal amount = check orderEvent.total.ensureType();
+                Payment payment = {id: "PY-" + orderId, orderId: orderId, amount: amount, currency: "NAD",
+                    status: "COMPLETED", providerReference: "SIM-" + orderId, createdAt: time:utcNow().toString()};
+                check self.paymentsCollection->insertOne(payment);
+                _ = check self.ordersCollection->updateOne({id: orderId}, {set: {status: "CONFIRMED"}}, {});
+                check self.producer->send({topic: "payments.completed", key: orderId.toBytes(), value: payment});
+                check self.producer->send({topic: "orders.status.changed", key: orderId.toBytes(),
+                    value: {id: orderId, status: "CONFIRMED", createdAt: time:utcNow().toString()}});
+            }
+        }
+    }
+}
+
+listener kafka:Listener deliveryEvents = new (kafkaUrl, {
+    groupId: "food-delivery-dispatch-service",
+    topics: ["orders.status.changed"],
+    offsetReset: "earliest"
+});
+
+service kafka:Service on deliveryEvents {
+    private final mongodb:Collection deliveriesCollection;
+    private final kafka:Producer producer;
+
+    function init() returns error? {
+        mongodb:Client mongoClient = check new ({connection: mongoUri});
+        mongodb:Database database = check mongoClient->getDatabase("food_delivery");
+        self.deliveriesCollection = check database->getCollection("deliveries");
+        self.producer = check new (kafkaUrl, {acks: kafka:ACKS_ALL, retryCount: 3, enableIdempotence: true});
+    }
+
+    remote function onConsumerRecord(kafka:Caller caller, json[] records) returns error? {
+        foreach json stateEvent in records {
+            string status = check stateEvent.status.ensureType();
+            if status == "READY" {
+                string orderId = check stateEvent.id.ensureType();
+                int existingCount = check self.deliveriesCollection->countDocuments({orderId: orderId}, {});
+                if existingCount == 0 {
+                    Delivery delivery = {id: "DL-" + orderId, orderId: orderId, driverName: "Available Driver",
+                        status: "ASSIGNED", createdAt: time:utcNow().toString()};
+                    check self.deliveriesCollection->insertOne(delivery);
+                    check self.producer->send({topic: "delivery.assigned", key: orderId.toBytes(), value: delivery});
+                }
+            }
+        }
+    }
+}
+
+listener kafka:Listener notificationEvents = new (kafkaUrl, {
+    groupId: "food-delivery-notification-service",
+    topics: ["orders.created", "payments.completed", "orders.status.changed", "delivery.assigned"],
+    offsetReset: "earliest"
+});
+
+service kafka:Service on notificationEvents {
+    private final mongodb:Collection notificationsCollection;
+
+    function init() returns error? {
+        mongodb:Client mongoClient = check new ({connection: mongoUri});
+        mongodb:Database database = check mongoClient->getDatabase("food_delivery");
+        self.notificationsCollection = check database->getCollection("notifications");
+    }
+
+    remote function onConsumerRecord(kafka:Caller caller, json[] records) returns error? {
+        foreach json event in records {
+            string eventId = "event";
+            string recipient = "customer";
+            string status = "received";
+            if event is map<json> && event.hasKey("id") { eventId = check event.id.ensureType(); }
+            if event is map<json> && event.hasKey("customer") { recipient = check event.customer.ensureType(); }
+            if event is map<json> && event.hasKey("status") { status = check event.status.ensureType(); }
+            json notice = {id: "NT-" + eventId + "-" + status, recipientId: recipient, channel: "in-app",
+                event: status, message: "Food delivery update: " + status, createdAt: time:utcNow().toString()};
+            int existingCount = check self.notificationsCollection->countDocuments({id: check notice.id.ensureType()}, {});
+            if existingCount == 0 {
+                check self.notificationsCollection->insertOne(check notice.cloneWithType());
+            }
+        }
+    }
+}
