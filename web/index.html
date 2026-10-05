@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f6f4ef"><title>Goodfood — local, delivered</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="#top"><span class="brand-mark">g.</span><span>goodfood<span class="brand-dot">.</span></span></a><div class="delivery"><span class="pin">⌖</span><span>Delivering to</span><strong>Windhoek Central</strong><span class="chevron">⌄</span></div><button class="cart-button" id="cart-button"><span>Bag</span><b id="cart-count">0</b></button></header>
+  <main id="top"><section class="hero"><div class="hero-copy"><div class="eyebrow"><i></i> GOOD FOOD, CLOSE TO HOME</div><h1>A little local.<br><em>A lot delicious.</em></h1><p>Your neighbourhood favourites, made with care and brought right to your door.</p><a class="hero-link" href="#restaurants">Find your next favourite <span>↗</span></a></div><div class="hero-art"><div class="sun"></div><div class="hero-note"><span>Made here,</span><strong>for you.</strong><small>Windhoek · Namibia</small></div><div class="plate"><div class="plate-food">🥗</div></div><div class="hero-badge"><span>✦</span> Fresh from local kitchens</div><div class="art-leaf leaf-one">✳</div><div class="art-leaf leaf-two">✿</div></div></section>
+  <section class="intro-row" id="restaurants"><div><span class="section-kicker">A GOOD PLACE TO START</span><h2>What's cooking nearby?</h2></div><div class="filters" id="filters"><button class="filter active" data-filter="All">All spots</button><button class="filter" data-filter="Namibian">Namibian</button><button class="filter" data-filter="Seafood">Seafood</button><button class="filter" data-filter="Fresh">Fresh</button></div></section>
+  <section class="restaurant-grid" id="restaurant-grid"><div class="loading">Setting the table…</div></section>
+  <section class="promise"><span class="promise-icon">✳</span><div><span class="section-kicker">ROOTED IN THE NEIGHBOURHOOD</span><h2>Good things happen<br>when we eat local.</h2></div><p>Every order supports the independent kitchens, growers and makers that make our city special.</p><a href="#restaurants" aria-label="Browse restaurants">↗</a></section>
+  <section class="orders-section"><div class="orders-heading"><div><span class="section-kicker">THE GOOD STUFF IS ON ITS WAY</span><h2>Your recent orders</h2></div><span class="live-dot">Live updates</span></div><div id="orders-list" class="orders-list"><p class="empty-orders">Your next favourite is only a few taps away.</p></div></section></main>
+  <footer><a class="brand" href="#top"><span class="brand-mark">g.</span><span>goodfood<span class="brand-dot">.</span></span></a><span>Local tastes better. Made with care in Windhoek.</span><small>© 2026 Goodfood</small></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog id="order-dialog"><form method="dialog" id="order-form"><button class="close" aria-label="Close">×</button><span class="section-kicker">ONE LAST THING</span><h2>Where should we bring it?</h2><p id="checkout-summary"></p><label>Your name<input name="customer" required minlength="2" placeholder="e.g. Amutenya"></label><label>Email address<input name="email" type="email" required placeholder="you@example.com"></label><label>Phone number<input name="phone" type="tel" required placeholder="+264 81 123 4567"></label><label>Delivery address<input name="address" required minlength="5" placeholder="Street, suburb, Windhoek"></label><button class="submit-order" type="submit">Place my order <span>↗</span></button></form></dialog>
+  <script src="app.js"></script>
+</body></html>

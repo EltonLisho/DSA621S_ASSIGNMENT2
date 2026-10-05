@@ -1,0 +1,1 @@
+const API = window.FOOD_API_BASE || '/api';

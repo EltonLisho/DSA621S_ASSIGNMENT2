@@ -1,0 +1,4 @@
+.env
+services/order-api/target/
+services/order-api/Dependencies.toml
+*.log

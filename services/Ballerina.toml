@@ -1,0 +1,15 @@
+[package]
+org = "dsa612s"
+name = "food_delivery_api"
+version = "1.0.0"
+distribution = "2201.13.5"
+
+[[dependency]]
+org = "ballerinax"
+name = "mongodb"
+version = "5.2.4"
+
+[[dependency]]
+org = "ballerinax"
+name = "kafka"
+version = "4.6.6"
